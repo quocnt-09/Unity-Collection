@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using QNT.LitJson;
@@ -122,6 +123,18 @@ namespace QNT.Firebase
 
             writer.WriteObjectEnd(); //top
             return writer.ToString();
+        }
+
+        public static (string typeString, object objectForJson)[] FormatValueDictionary(object[] toFormat)
+        {
+            var dictionary = new List<(string typeString, object objectForJson)>();
+
+            foreach (var value in toFormat)
+            {
+                dictionary.Add(FormatForValueJson(value));
+            }
+
+            return dictionary.ToArray();
         }
     }
 }

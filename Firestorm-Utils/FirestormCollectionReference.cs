@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -129,6 +130,190 @@ namespace QNT.Firebase
             return new FirestormQuerySnapshot(newJo);
         }
 
+        public string GetQueryStringCustom(
+            (string fieldName, string operationString, object target)[] qrWhere, 
+            (string fieldName, string direction)[] qrOrderBy = null, 
+            string[] qrSelect = null, 
+            int qrOffset = -1, 
+            int qrLimit = -1,
+            object[] qrStartAt = null, bool beforeStartAt = false, 
+            object[] qrEndAt = null, bool beforeEndAt = false)
+        {
+            var dictionary = new Dictionary<string, object>();
+            var structuredQuery = new Dictionary<string, object>();
+
+            #region SELLECT
+
+            if (qrSelect != null)
+            {
+                structuredQuery.Add("select", new Projection
+                {
+                    fields = qrSelect.Select(select => new FieldReference
+                    {
+                        fieldPath = select
+                    }).ToArray()
+                });
+            }
+
+            #endregion
+
+            #region FORM
+
+            structuredQuery.Add("from", new[]
+            {
+                new CollectionSelector
+                {
+                    collectionId = collectionName, 
+                    allDescendants = false,
+                }
+            });
+
+            #endregion
+
+            #region WHERE
+
+            if (qrWhere != null)
+            {
+                var fieldFilters = new List<FieldFilter>();
+                foreach (var (fieldName, operationString, target) in qrWhere)
+                {
+                    var filter = new FieldFilter
+                    {
+                        field = new FieldReference
+                        {
+                            fieldPath = fieldName
+                        }, 
+                        op = StringToOperator(operationString).ToString()
+                    };
+
+                    var (typeString, objectForJson) = FirestormUtility.FormatForValueJson(target);
+                    filter.value = new Dictionary<string, object>
+                    {
+                        [typeString] = objectForJson,
+                    };
+                    fieldFilters.Add(filter);
+                }
+
+                if (qrWhere.Length == 1)
+                {
+                    structuredQuery.Add("where", new Dictionary<string, IFilter>
+                    {
+                        ["fieldFilter"] = fieldFilters[0]
+                    });
+                }
+                else if (qrWhere.Length > 1)
+                {
+                    var cf = new CompositeFilter
+                    {
+                        op = Operator.AND.ToString(), 
+                        filters = fieldFilters.Select(x => new FilterForFieldFilter
+                        {
+                            fieldFilter = x
+                        }).ToArray(),
+                    };
+                    structuredQuery.Add("where", new Dictionary<string, IFilter>
+                    {
+                        ["compositeFilter"] = cf
+                    });
+                }
+            }
+
+            #endregion
+
+            #region ORDERBY
+
+            if (qrOrderBy != null)
+            {
+                structuredQuery.Add("orderBy", qrOrderBy.Select(order => new Order
+                {
+                    field = new FieldReference
+                    {
+                        fieldPath = order.fieldName,
+                    }, direction = StringToDirection(order.direction).ToString(),
+                }).ToArray());
+            }
+
+            #endregion
+
+            if (qrOffset >= 0)
+            {
+                structuredQuery.Add("offset", qrOffset);
+            }
+
+            if (qrLimit >= 0)
+            {
+                structuredQuery.Add("limit", qrLimit);
+            }
+
+            dictionary.Add("structuredQuery", structuredQuery);
+
+            var jsonWriter = new JsonWriter {PrettyPrint = true};
+            JsonMapper.ToJson(dictionary, jsonWriter);
+            var prettyPrint = jsonWriter.ToString();
+
+            Debug.Log($"postJson: {prettyPrint}");
+            File.WriteAllText($"{Application.dataPath}/postJson.json", prettyPrint);
+
+            return JsonMapper.ToJson(dictionary);
+        }
+
+        private static Operator StringToOperator(string operatorString)
+        {
+            switch (operatorString)
+            {
+                case "==":
+                    return Operator.EQUAL;
+                case ">":
+                    return Operator.GREATER_THAN;
+                case "<":
+                    return Operator.LESS_THAN;
+                case ">=":
+                    return Operator.GREATER_THAN_OR_EQUAL;
+                case "<=":
+                    return Operator.LESS_THAN_OR_EQUAL;
+                case "array_contains":
+                    return Operator.ARRAY_CONTAINS;
+            }
+
+            throw new FirestormException($"Operator {operatorString} not supported!");
+        }
+
+        private static Direction StringToDirection(string direction)
+        {
+            switch (direction)
+            {
+                case "asc":
+                    return Direction.ASCENDING;
+                case "desc":
+                    return Direction.DESCENDING;
+                default:
+                    throw new FirestormException($"Direction {direction} not supported!");
+            }
+        }
+
+        void GetTest()
+        {
+            var collectionReference = new FirestormCollectionReference("WTF");
+            var text = collectionReference.GetQueryStringCustom(
+                new (string fieldName, string operationString, object target)[] {("a", "<=", 1), ("qwe", "==", true)});
+
+            Debug.Log(text);
+        }
+
+        void GetTestFull()
+        {
+            var collectionReference = new FirestormCollectionReference("WTF");
+            var text = collectionReference.GetQueryStringCustom(
+                new (string fieldName, string operationString, object target)[] {("a", "<=", 1), ("qwe", "==", true)}, 
+                new[] {("test", "asc"), ("ar", "desc")}, 
+                new[] {"123",},
+                10, 
+                5,
+                new object[] {155, 454}, true, new object[] {"asd", true}, false);
+
+            Debug.Log(text);
+        }
+        
         private struct RunQuery
         {
             public StructuredQuery structuredQuery;
@@ -145,10 +330,22 @@ namespace QNT.Firebase
             //public Order[] orderBy;
         }
 
-        // private struct Order
-        // {
-        //     public FieldReference field;
-        // }
+        private struct Projection
+        {
+            public FieldReference[] fields;
+        }
+
+        private struct Order
+        {
+            public FieldReference field;
+            public string direction;
+        }
+
+        private struct Cursor
+        {
+            public Dictionary<string, object> values;
+            public bool before;
+        }
 
         private struct CollectionSelector
         {
@@ -194,27 +391,6 @@ namespace QNT.Firebase
             public string fieldPath;
         }
 
-        private Operator StringToOperator(string operatorString)
-        {
-            switch (operatorString)
-            {
-                case "==":
-                    return Operator.EQUAL;
-                case ">":
-                    return Operator.GREATER_THAN;
-                case "<":
-                    return Operator.LESS_THAN;
-                case ">=":
-                    return Operator.GREATER_THAN_OR_EQUAL;
-                case "<=":
-                    return Operator.LESS_THAN_OR_EQUAL;
-                case "array_contains":
-                    return Operator.ARRAY_CONTAINS;
-            }
-
-            throw new FirestormException($"Operator {operatorString} not supported!");
-        }
-
         private enum Operator
         {
             OPERATOR_UNSPECIFIED,
@@ -227,6 +403,13 @@ namespace QNT.Firebase
             ARRAY_CONTAINS,
             IS_NAN, //not supported
             IS_NULL, //not supported
+        }
+
+        private enum Direction
+        {
+            DIRECTION_UNSPECIFIED,
+            ASCENDING,
+            DESCENDING,
         }
 
         private interface IFilter
