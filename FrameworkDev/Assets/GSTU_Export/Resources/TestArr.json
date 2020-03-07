@@ -1,0 +1,44 @@
+{
+	"LEVEL_1": [
+		{
+			"Exp": 1,
+			"Reward": "abc",
+			"Percent": 0.1
+		},
+		{
+			"Exp": 2,
+			"Reward": "ewe",
+			"Percent": 0.3
+		},
+		{
+			"Exp": 3,
+			"Reward": "rwqer",
+			"Percent": 0.5
+		},
+		{
+			"Exp": 4,
+			"Reward": "rqwer",
+			"Percent": 0.7
+		},
+		{
+			"Exp": 5,
+			"Reward": "ads",
+			"Percent": 0.9
+		},
+		{
+			"Exp": 6,
+			"Reward": "twqet",
+			"Percent": 0.11
+		},
+		{
+			"Exp": 7,
+			"Reward": "hgthv",
+			"Percent": 0.13
+		},
+		{
+			"Exp": 8,
+			"Reward": "fewfgdthjyg",
+			"Percent": 0.15
+		}
+	]
+}

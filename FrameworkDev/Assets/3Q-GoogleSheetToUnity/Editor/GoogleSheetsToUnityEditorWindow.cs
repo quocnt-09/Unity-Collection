@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using Q.Extension;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,20 +20,25 @@ namespace GoogleSheetsToUnity.Editor
         private readonly string _gstuAPIsConfig = "GSTU_Config";
         private readonly string _resourcePath = $"Assets/{exportFolder}/Resources";
 
-        GoogleSheetsToUnityConfig config;
-        private SheetSetting _sheetConfig;
+        private GoogleSheetsToUnityConfig config;
+        private SheetSetting _sheetSetting;
+        private QueueAction _queue;
         private bool showSecret = false;
+        private Vector2 scrollPosition;
+        private bool expandAll;
+        private float process = 0;
+        private bool isBuildText;
 
         [MenuItem("3Q/Google Sheet To Unity")]
         public static void Open()
         {
-            GoogleSheetsToUnityEditorWindow win = GetWindow<GoogleSheetsToUnityEditorWindow>("GSTU Build Connection");
+            var win = GetWindow<GoogleSheetsToUnityEditorWindow>("GSTU Build Connection");
             ServicePointManager.ServerCertificateValidationCallback = Validator;
 
             win.Init();
         }
 
-        public static bool Validator(object in_sender, X509Certificate in_certificate, X509Chain in_chain, SslPolicyErrors in_sslPolicyErrors)
+        private static bool Validator(object in_sender, X509Certificate in_certificate, X509Chain in_chain, SslPolicyErrors in_sslPolicyErrors)
         {
             return true;
         }
@@ -43,11 +50,24 @@ namespace GoogleSheetsToUnity.Editor
             foreach (var item in finds)
             {
                 var path = AssetDatabase.GUIDToAssetPath(item);
-                _sheetConfig = AssetDatabase.LoadAssetAtPath<SheetSetting>(path);
+                _sheetSetting = AssetDatabase.LoadAssetAtPath<SheetSetting>(path);
+            }
+
+            if (_queue == null)
+            {
+                _queue = new QueueAction();
             }
         }
 
-        void OnGUI()
+        private void OnEnable()
+        {
+            if (_queue == null)
+            {
+                _queue = new QueueAction();
+            }
+        }
+
+        public void OnGUI()
         {
             BuildConnection();
 
@@ -56,45 +76,90 @@ namespace GoogleSheetsToUnity.Editor
 
         private void DrawLocalization()
         {
-            if (_sheetConfig == null)
+            if (_sheetSetting == null)
             {
                 GUILayout.Label("Create GSTU Setting", EditorStyles.boldLabel);
                 GUI.backgroundColor = Color.red;
-                if (GUILayout.Button("Create", GUILayout.Height(30)))
+                if (!GUILayout.Button("Create", GUILayout.Height(30))) return;
+
+                if (AssetDatabase.IsValidFolder(_folderPath))
                 {
-                    if (AssetDatabase.IsValidFolder(_folderPath))
-                    {
-                        _sheetConfig = CreateInstance<SheetSetting>();
-                        AssetDatabase.CreateAsset(_sheetConfig, $"{_folderPath}/{_sheetSettingAsset}.asset");
+                    _sheetSetting = CreateInstance<SheetSetting>();
+                    AssetDatabase.CreateAsset(_sheetSetting, $"{_folderPath}/{_sheetSettingAsset}.asset");
 
-                        config = CreateInstance<GoogleSheetsToUnityConfig>();
-                        AssetDatabase.CreateAsset(config, $"{_resourcePath}/{_gstuAPIsConfig}.asset");
-                    }
-                    else
-                    {
-                        //create export folder
-                        AssetDatabase.CreateFolder("Assets", exportFolder);
-
-                        //create export resource folder
-                        AssetDatabase.CreateFolder(_folderPath, "Resources");
-
-                        //create export scripts folder
-                        AssetDatabase.CreateFolder(_folderPath, "Scripts");
-
-                        //
-                        _sheetConfig = CreateInstance<SheetSetting>();
-                        AssetDatabase.CreateAsset(_sheetConfig, $"{_folderPath}/{_sheetSettingAsset}.asset");
-
-                        config = CreateInstance<GoogleSheetsToUnityConfig>();
-                        AssetDatabase.CreateAsset(config, $"{_resourcePath}/{_gstuAPIsConfig}.asset");
-                    }
-
-                    AssetDatabase.SaveAssets();
+                    config = CreateInstance<GoogleSheetsToUnityConfig>();
+                    AssetDatabase.CreateAsset(config, $"{_resourcePath}/{_gstuAPIsConfig}.asset");
                 }
+                else
+                {
+                    //create export folder
+                    AssetDatabase.CreateFolder("Assets", exportFolder);
+
+                    //create export resource folder
+                    AssetDatabase.CreateFolder(_folderPath, "Resources");
+
+                    //create export scripts folder
+                    AssetDatabase.CreateFolder(_folderPath, "Scripts");
+
+                    //
+                    _sheetSetting = CreateInstance<SheetSetting>();
+                    AssetDatabase.CreateAsset(_sheetSetting, $"{_folderPath}/{_sheetSettingAsset}.asset");
+
+                    config = CreateInstance<GoogleSheetsToUnityConfig>();
+                    AssetDatabase.CreateAsset(config, $"{_resourcePath}/{_gstuAPIsConfig}.asset");
+                }
+
+                AssetDatabase.SaveAssets();
             }
             else
             {
-                DrawSheetConfig();
+                scrollPosition = GUILayout.BeginScrollView(scrollPosition);
+                GUILayout.Label("");
+                GUILayout.Label("Google Sheet Config", EditorStyles.boldLabel);
+                for (int i = 0; i < _sheetSetting.GoogleSheets.Count; i++)
+                {
+                    DrawSheetConfig(i + 1, _sheetSetting.GoogleSheets[i]);
+                    GUI.backgroundColor = Color.white;
+                }
+
+                GUILayout.EndScrollView();
+
+                GUILayout.BeginHorizontal();
+
+                if (GUILayout.Button("Add Google Sheet"))
+                {
+                    _sheetSetting.GoogleSheets.Add(new SheetConfig());
+                }
+
+                if (GUILayout.Button("Expand"))
+                {
+                    expandAll = !expandAll;
+                    for (int i = 0; i < _sheetSetting.GoogleSheets.Count; i++)
+                    {
+                        _sheetSetting.GoogleSheets[i].isExpand = expandAll;
+                    }
+                }
+
+                GUI.backgroundColor = Color.yellow;
+                if (GUILayout.Button("Save Asset"))
+                {
+                    EditorUtility.SetDirty(config);
+                    EditorUtility.SetDirty(_sheetSetting);
+                    AssetDatabase.SaveAssets();
+                }
+
+                GUI.backgroundColor = Color.white;
+                GUILayout.EndHorizontal();
+
+                GUILayout.Label("");
+                GUILayout.Label("Download & Export data", EditorStyles.boldLabel);
+                GUI.backgroundColor = Color.green;
+                if (GUILayout.Button("Export data", GUILayout.Height(30)))
+                {
+                    OnImportClicked();
+                }
+
+                GUILayout.Label("", GUILayout.Height(110));
             }
         }
 
@@ -111,14 +176,7 @@ namespace GoogleSheetsToUnity.Editor
             config.CLIENT_ID = EditorGUILayout.TextField("Client ID", config.CLIENT_ID);
 
             GUILayout.BeginHorizontal();
-            if (showSecret)
-            {
-                config.CLIENT_SECRET = EditorGUILayout.TextField("Client Secret Code", config.CLIENT_SECRET);
-            }
-            else
-            {
-                config.CLIENT_SECRET = EditorGUILayout.PasswordField("Client Secret Code", config.CLIENT_SECRET);
-            }
+            config.CLIENT_SECRET = showSecret ? EditorGUILayout.TextField("Client Secret Code", config.CLIENT_SECRET) : EditorGUILayout.PasswordField("Client Secret Code", config.CLIENT_SECRET);
 
             showSecret = GUILayout.Toggle(showSecret, "Show");
             GUILayout.EndHorizontal();
@@ -136,72 +194,82 @@ namespace GoogleSheetsToUnity.Editor
             EditorUtility.SetDirty(config);
         }
 
-        void DrawSheetConfig()
+        public void DrawSheetConfig(int index, SheetConfig sheetConfig)
         {
-            GUILayout.Label("");
-            GUILayout.Label("Sheet Config Setting", EditorStyles.boldLabel);
-            _sheetConfig.spreadSheetKey = EditorGUILayout.TextField("Spread sheet key", _sheetConfig.spreadSheetKey);
-
-            GUILayout.Label("");
-            GUILayout.Label("Sheet Names", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("These sheets below will be downloaded. Let the list blank (remove all items) if you want to download all sheets", MessageType.Info);
-
-            int _removeId = -1;
-            for (int i = 0; i < _sheetConfig.SheetNames.Count; i++)
+            GUI.backgroundColor = sheetConfig.isExpand ? index % 2 == 0 ? Color.cyan : Color.green : Color.white;
+            sheetConfig.isExpand = EditorGUILayout.BeginFoldoutHeaderGroup(sheetConfig.isExpand, $"Google Sheet {index}: {sheetConfig.spreadSheetKey}");
+            GUI.backgroundColor = Color.white;
+            if (sheetConfig.isExpand)
             {
-                GUILayout.BeginHorizontal();
-                _sheetConfig.SheetNames[i] = EditorGUILayout.TextField(string.Format("Sheet {0}", i), _sheetConfig.SheetNames[i]);
-                if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(20)))
+                GUILayout.Label("Sheet Config Setting", EditorStyles.helpBox);
+                sheetConfig.spreadSheetKey = EditorGUILayout.TextField("Spread sheet key", sheetConfig.spreadSheetKey);
+
+                GUILayout.Label("Sheet Names", EditorStyles.helpBox);
+
+                int removeId = -1;
+                for (int i = 0; i < sheetConfig.sheetNames.Count; i++)
                 {
-                    _removeId = i;
+                    GUILayout.BeginHorizontal();
+
+                    GUILayout.Label($"Sheet {i}:", GUILayout.Width(60));
+                    sheetConfig.sheetNames[i].name = EditorGUILayout.TextField(sheetConfig.sheetNames[i].name);
+
+                    GUILayout.Label("Start Cell:", GUILayout.Width(65));
+                    sheetConfig.sheetNames[i].startCell = EditorGUILayout.TextField(sheetConfig.sheetNames[i].startCell, GUILayout.Width(70));
+
+                    GUILayout.Label("End Cell:", GUILayout.Width(65));
+                    sheetConfig.sheetNames[i].endCell = EditorGUILayout.TextField(sheetConfig.sheetNames[i].endCell, GUILayout.Width(70));
+
+                    GUILayout.Label("Text:", GUILayout.Width(30));
+                    sheetConfig.sheetNames[i].buildText = GUILayout.Toggle(sheetConfig.sheetNames[i].buildText, "", GUILayout.Width(20));
+
+                    GUI.backgroundColor = Color.red;
+                    if (GUILayout.Button("X", EditorStyles.miniButton, GUILayout.Width(40)))
+                    {
+                        if (EditorUtility.DisplayDialog("Note!", $"You will remove sheet {sheetConfig.sheetNames[i].name}. Are you sure?", "Oke", "No"))
+                        {
+                            removeId = i;
+                        }
+                    }
+
+                    GUI.backgroundColor = Color.white;
+                    GUILayout.EndHorizontal();
                 }
 
+                if (removeId >= 0) sheetConfig.sheetNames.RemoveAt(removeId);
+                GUILayout.Label(sheetConfig.sheetNames.Count <= 0 ? "Download all sheets" : $"Download {sheetConfig.sheetNames.Count} sheets");
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Add sheet name", GUILayout.Width(150)))
+                {
+                    sheetConfig.sheetNames.Add(new SheetName {name = "", buildText = false});
+                }
+
+                GUI.backgroundColor = Color.red;
+                if (GUILayout.Button("X", GUILayout.Width(40)))
+                {
+                    if (EditorUtility.DisplayDialog("Note!", $"You will remove google sheet. Are you sure?", "Oke", "No"))
+                    {
+                        _sheetSetting.GoogleSheets.Remove(sheetConfig);
+                    }
+                }
+
+                GUI.backgroundColor = Color.white;
                 GUILayout.EndHorizontal();
             }
 
-            if (_removeId >= 0) _sheetConfig.SheetNames.RemoveAt(_removeId);
-            if (_sheetConfig.SheetNames.Count <= 0)
-            {
-                GUILayout.Label("Download all sheets");
-            }
-            else
-                GUILayout.Label(string.Format("Download {0} sheets", _sheetConfig.SheetNames.Count));
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Add sheet name"))
-            {
-                _sheetConfig.SheetNames.Add("");
-            }
-
-            if (GUILayout.Button("Save Asset"))
-            {
-                EditorUtility.SetDirty(config);
-                EditorUtility.SetDirty(_sheetConfig);
-                AssetDatabase.SaveAssets();
-            }
-
-            GUILayout.EndHorizontal();
-
             GUILayout.Label("");
-            GUILayout.Label("Download & Export data", EditorStyles.boldLabel);
-            GUI.backgroundColor = Color.green;
-            if (GUILayout.Button("Export data", GUILayout.Height(30)))
-            {
-                OnImportClicked();
-            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
         }
-
-        private int process = 0;
 
         float GetProcess()
         {
-            return process / 100f;
+            return process;
         }
-
-        private int currentIndex = 0;
 
         void OnImportClicked()
         {
+            _queue = new QueueAction();
             if (!AssetDatabase.IsValidFolder(_folderPath + "/Resources"))
             {
                 AssetDatabase.CreateFolder(_folderPath, "Resources");
@@ -213,42 +281,194 @@ namespace GoogleSheetsToUnity.Editor
             }
 
             EditorUtility.ClearProgressBar();
-            process = 0;
-            currentIndex = 0;
-            ExportSheet(_sheetConfig.spreadSheetKey, _sheetConfig.SheetNames[currentIndex]);
+
+            foreach (var ggSheet in _sheetSetting.GoogleSheets)
+            {
+                foreach (var sheet in ggSheet.sheetNames)
+                {
+                    var sheetName = sheet.name;
+                    var startCell = sheet.startCell;
+                    var endCell = sheet.endCell;
+                    var buildText = sheet.buildText;
+
+                    _queue.AddQueue(new Action<string, string, string, string, bool>(ExportSheet), new object[] {ggSheet.spreadSheetKey, sheetName, startCell, endCell, buildText});
+                }
+            }
+
+            _queue.NextAction(true);
         }
 
-        void ExportSheet(string sheetId, string sheetName)
+        private void ExportSheet(string sheetId, string sheetName, string startCell, string endCell, bool buildText)
         {
+            isBuildText = buildText;
             Debug.Log($"sheetName: {sheetName}");
             EditorUtility.DisplayProgressBar("Reading From Google Sheet ", $"Sheet: {sheetName}", GetProcess());
-            var gstuSearch = new GSTU_Search(sheetId, sheetName, "A1", "Z10000");
+            var gstuSearch = new GSTU_Search(sheetId, sheetName, startCell, endCell);
             SpreadsheetManager.Read(gstuSearch, ReadSheetCallback);
-        }
-
-        void OnCompleteRead()
-        {
-            currentIndex++;
-            if (currentIndex < _sheetConfig.SheetNames.Count)
-            {
-                ExportSheet(_sheetConfig.spreadSheetKey, _sheetConfig.SheetNames[currentIndex]);
-            }
-            else
-            {
-                EditorUtility.ClearProgressBar();
-            }
         }
 
         void ReadSheetCallback(GstuSpreadSheet sheet)
         {
+            EditorUtility.ClearProgressBar();
+            process = 0;
             if (sheet != null)
             {
                 Debug.Log($"Total Row Count: {sheet.rows.primaryDictionary.Count}");
-                ExportData(sheet, (currentIndex + 1) * (100 / (float) _sheetConfig.SheetNames.Count), OnCompleteRead);
+                if (isBuildText)
+                {
+                    BuildText(sheet, OnCompleteRead);
+                }
+                else
+                {
+                    ExportData(sheet, OnCompleteRead);
+                }
             }
         }
 
-        private void ExportData(GstuSpreadSheet sheet, float targetPer, Action complete)
+        private void OnCompleteRead()
+        {
+            EditorUtility.ClearProgressBar();
+            _queue.Done(true);
+        }
+
+        struct DataType
+        {
+            public string _type;
+            public string _name;
+
+            public DataType(string n, string t)
+            {
+                _name = n;
+                _type = t;
+            }
+        }
+
+        private void ExportData(GstuSpreadSheet sheet, Action complete)
+        {
+            var sheetName = sheet.sheetName;
+            var jsonPath = $"{Application.dataPath}/{exportFolder}/Resources/{sheetName}.json";
+            var jsonString = "";
+
+            bool isBuildKey = false;
+            var dataTypes = new List<DataType>();
+            var listBuildKeys = new Dictionary<string, List<object>>();
+            //var listBuildArr = new Dictionary<string, List<List<object>>>();
+            var listKeys = new List<string>();
+
+            foreach (var key in sheet.columns.secondaryKeyLink.Keys)
+            {
+                var listValue = sheet.columns.GetValueFromSecondary(key);
+
+                if (key.ToLower().Contains("[key]") || key.ToLower().Contains("[arr]"))
+                {
+                    isBuildKey = key.ToLower().Contains("[key]");
+                    foreach (var text in listValue)
+                    {
+                        var kk = text.value;
+                        if (!kk.Equals(key))
+                        {
+                            listKeys.Add(kk);
+                            if (!listBuildKeys.ContainsKey(kk))
+                            {
+                                listBuildKeys.Add(kk, new List<object>());
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    var slip = key.Split(':');
+                    var typeName = slip[0];
+                    var type = slip[1];
+                    dataTypes.Add(new DataType(typeName, type));
+
+                    var countKey = 0;
+                    foreach (var text in listValue)
+                    {
+                        if (!text.value.Equals(key))
+                        {
+                            var value = text.value;
+                            var keyData = listKeys[countKey];
+                            countKey++;
+                            if (listBuildKeys.TryGetValue(keyData, out var listValues))
+                            {
+                                listValues.Add(value);
+                            }
+                        }
+                    }
+                }
+            }
+
+            jsonString = "{\n";
+            if (isBuildKey)
+            {
+                foreach (var key in listBuildKeys)
+                {
+                    jsonString += "\t\"" + key.Key + "\": {\n";
+                    for (var i = 0; i < dataTypes.Count; i++)
+                    {
+                        var dataType = dataTypes[i];
+                        var txtValue = "";
+                        switch (dataType._type.ToLower())
+                        {
+                            case "str":
+                            case "string":
+                                txtValue = "\"" + key.Value[i] + "\"";
+                                break;
+                            default:
+                                txtValue = key.Value[i].ToString();
+                                break;
+                        }
+
+                        jsonString += "\t\t\"" + dataType._name + "\": " + txtValue + ",\n";
+                    }
+
+                    jsonString = jsonString.Substring(0, jsonString.Length - 2);
+                    jsonString += "\n\t},\n";
+                }
+            }
+            else
+            {
+                foreach (var key in listBuildKeys)
+                {
+                    jsonString += "\t\"" + key.Key + "\": [\n";
+
+                    var numRow = key.Value.Count / dataTypes.Count;
+                    for (int r = 0; r < numRow; r++)
+                    {
+                        jsonString += "\t\t{\n";
+                        for (var c = 0; c < dataTypes.Count; c++)
+                        {
+                            var dataType = dataTypes[c];
+                            var txtValue = "";
+                            switch (dataType._type.ToLower())
+                            {
+                                case "str":
+                                case "string":
+                                    txtValue = "\"" + key.Value[c*numRow+r] + "\"";
+                                    break;
+                                default:
+                                    txtValue = key.Value[c*numRow+r].ToString();
+                                    break;
+                            }
+
+                            jsonString += "\t\t\t\"" + dataType._name + "\": " + txtValue + ",\n";
+                        }
+                        jsonString = jsonString.Substring(0, jsonString.Length - 2);
+                        jsonString += "\n\t\t},\n";
+                    }
+
+                    jsonString = jsonString.Substring(0, jsonString.Length - 2);
+                    jsonString += "\n\t],\n";
+                }
+            }
+            jsonString = jsonString.Substring(0, jsonString.Length - 2);
+            jsonString += "\n}";
+            File.WriteAllText(jsonPath, jsonString);
+            complete?.Invoke();
+        }
+
+        private void BuildText(GstuSpreadSheet sheet, Action complete)
         {
             var sheetName = sheet.sheetName;
             int count = 0;
@@ -303,7 +523,7 @@ namespace GoogleSheetsToUnity.Editor
                             if (!text.value.Equals(key))
                             {
                                 ListKey += "\t\t\t" + text.value + ",\t\t//" + stringValues[count] + "\n";
-                                process = (int) (targetPer * (count / (float) ListValue.Count));
+                                process = count / (float) ListValue.Count;
                                 count++;
                                 EditorUtility.DisplayProgressBar("Reading From Google Sheet ", $"Sheet: {sheetName}/{text.value} - {count}/{ListValue.Count}", GetProcess());
                             }

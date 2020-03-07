@@ -12,8 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42a58589dc8017441aa0a434c4a594be, type: 3}
   m_Name: SheetSetting
   m_EditorClassIdentifier: 
-  spreadSheetKey: 194IYGy2-ogOHKzgCgpggyvI9L6H_ytBEVto7bMqwYNU
-  startCell: A1
-  endCell: Z100
-  SheetNames:
-  - Text
+  GoogleSheets:
+  - spreadSheetKey: 194IYGy2-ogOHKzgCgpggyvI9L6H_ytBEVto7bMqwYNU
+    isExpand: 1
+    sheetNames:
+    - startCell: A1
+      endCell: Z100
+      buildText: 0
+      name: TestArr
+    - startCell: A1
+      endCell: Z100
+      buildText: 0
+      name: TestKey
