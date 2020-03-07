@@ -11,21 +11,21 @@ namespace GoogleSheetsToUnity.Editor
 {
     public class GoogleSheetsToUnityEditorWindow : EditorWindow
     {
-        const float DarkGray = 0.4f;
-        const float LightGray = 0.9f;
+        private static readonly string exportFolder = "GSTU_Export";
 
-        private string folderPath = "Assets/Localizations";
-        private string assetFile = "LocalizationSetting.asset";
-        private string resourcePath = "Assets/Localizations/Resources";
+        private readonly string _folderPath = $"Assets/{exportFolder}";
+        private readonly string _sheetSettingAsset = "SheetSetting";
+        private readonly string _gstuAPIsConfig = "GSTU_Config";
+        private readonly string _resourcePath = $"Assets/{exportFolder}/Resources";
 
         GoogleSheetsToUnityConfig config;
-        private LocalizedSetting localizedConfig;
+        private SheetSetting _sheetConfig;
         private bool showSecret = false;
 
-        [MenuItem("3Q/Localization/Build Connection")]
+        [MenuItem("3Q/Google Sheet To Unity")]
         public static void Open()
         {
-            GoogleSheetsToUnityEditorWindow win = GetWindow<GoogleSheetsToUnityEditorWindow>("Localization Build Connection");
+            GoogleSheetsToUnityEditorWindow win = GetWindow<GoogleSheetsToUnityEditorWindow>("GSTU Build Connection");
             ServicePointManager.ServerCertificateValidationCallback = Validator;
 
             win.Init();
@@ -38,12 +38,12 @@ namespace GoogleSheetsToUnity.Editor
 
         public void Init()
         {
-            config = (GoogleSheetsToUnityConfig) Resources.Load("GSTU_Config");
-            var finds = AssetDatabase.FindAssets("t:LocalizedSetting", null);
+            config = (GoogleSheetsToUnityConfig) Resources.Load(_gstuAPIsConfig);
+            var finds = AssetDatabase.FindAssets($"t:{_sheetSettingAsset}", null);
             foreach (var item in finds)
             {
                 var path = AssetDatabase.GUIDToAssetPath(item);
-                localizedConfig = AssetDatabase.LoadAssetAtPath<LocalizedSetting>(path);
+                _sheetConfig = AssetDatabase.LoadAssetAtPath<SheetSetting>(path);
             }
         }
 
@@ -56,31 +56,37 @@ namespace GoogleSheetsToUnity.Editor
 
         private void DrawLocalization()
         {
-            if (localizedConfig == null)
+            if (_sheetConfig == null)
             {
-                GUILayout.Label("Create Localization Setting", EditorStyles.boldLabel);
+                GUILayout.Label("Create GSTU Setting", EditorStyles.boldLabel);
                 GUI.backgroundColor = Color.red;
                 if (GUILayout.Button("Create", GUILayout.Height(30)))
                 {
-                    if (AssetDatabase.IsValidFolder(folderPath))
+                    if (AssetDatabase.IsValidFolder(_folderPath))
                     {
-                        localizedConfig = CreateInstance<LocalizedSetting>();
-                        AssetDatabase.CreateAsset(localizedConfig, $"{folderPath}/{assetFile}");
+                        _sheetConfig = CreateInstance<SheetSetting>();
+                        AssetDatabase.CreateAsset(_sheetConfig, $"{_folderPath}/{_sheetSettingAsset}.asset");
 
                         config = CreateInstance<GoogleSheetsToUnityConfig>();
-                        AssetDatabase.CreateAsset(config, $"{resourcePath}/GSTU_Config.asset");
+                        AssetDatabase.CreateAsset(config, $"{_resourcePath}/{_gstuAPIsConfig}.asset");
                     }
                     else
                     {
-                        AssetDatabase.CreateFolder("Assets", "Localizations");
-                        AssetDatabase.CreateFolder(folderPath, "Resources");
-                        AssetDatabase.CreateFolder(folderPath, "Scripts");
+                        //create export folder
+                        AssetDatabase.CreateFolder("Assets", exportFolder);
 
-                        localizedConfig = CreateInstance<LocalizedSetting>();
-                        AssetDatabase.CreateAsset(localizedConfig, $"{folderPath}/{assetFile}");
+                        //create export resource folder
+                        AssetDatabase.CreateFolder(_folderPath, "Resources");
+
+                        //create export scripts folder
+                        AssetDatabase.CreateFolder(_folderPath, "Scripts");
+
+                        //
+                        _sheetConfig = CreateInstance<SheetSetting>();
+                        AssetDatabase.CreateAsset(_sheetConfig, $"{_folderPath}/{_sheetSettingAsset}.asset");
 
                         config = CreateInstance<GoogleSheetsToUnityConfig>();
-                        AssetDatabase.CreateAsset(config, $"{resourcePath}/GSTU_Config.asset");
+                        AssetDatabase.CreateAsset(config, $"{_resourcePath}/{_gstuAPIsConfig}.asset");
                     }
 
                     AssetDatabase.SaveAssets();
@@ -134,17 +140,17 @@ namespace GoogleSheetsToUnity.Editor
         {
             GUILayout.Label("");
             GUILayout.Label("Sheet Config Setting", EditorStyles.boldLabel);
-            localizedConfig.spreadSheetKey = EditorGUILayout.TextField("Spread sheet key", localizedConfig.spreadSheetKey);
+            _sheetConfig.spreadSheetKey = EditorGUILayout.TextField("Spread sheet key", _sheetConfig.spreadSheetKey);
 
             GUILayout.Label("");
             GUILayout.Label("Sheet Names", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("These sheets below will be downloaded. Let the list blank (remove all items) if you want to download all sheets", MessageType.Info);
 
             int _removeId = -1;
-            for (int i = 0; i < localizedConfig.SheetNames.Count; i++)
+            for (int i = 0; i < _sheetConfig.SheetNames.Count; i++)
             {
                 GUILayout.BeginHorizontal();
-                localizedConfig.SheetNames[i] = EditorGUILayout.TextField(string.Format("Sheet {0}", i), localizedConfig.SheetNames[i]);
+                _sheetConfig.SheetNames[i] = EditorGUILayout.TextField(string.Format("Sheet {0}", i), _sheetConfig.SheetNames[i]);
                 if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(20)))
                 {
                     _removeId = i;
@@ -153,24 +159,24 @@ namespace GoogleSheetsToUnity.Editor
                 GUILayout.EndHorizontal();
             }
 
-            if (_removeId >= 0) localizedConfig.SheetNames.RemoveAt(_removeId);
-            if (localizedConfig.SheetNames.Count <= 0)
+            if (_removeId >= 0) _sheetConfig.SheetNames.RemoveAt(_removeId);
+            if (_sheetConfig.SheetNames.Count <= 0)
             {
                 GUILayout.Label("Download all sheets");
             }
             else
-                GUILayout.Label(string.Format("Download {0} sheets", localizedConfig.SheetNames.Count));
+                GUILayout.Label(string.Format("Download {0} sheets", _sheetConfig.SheetNames.Count));
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Add sheet name"))
             {
-                localizedConfig.SheetNames.Add("");
+                _sheetConfig.SheetNames.Add("");
             }
 
             if (GUILayout.Button("Save Asset"))
             {
                 EditorUtility.SetDirty(config);
-                EditorUtility.SetDirty(localizedConfig);
+                EditorUtility.SetDirty(_sheetConfig);
                 AssetDatabase.SaveAssets();
             }
 
@@ -196,20 +202,20 @@ namespace GoogleSheetsToUnity.Editor
 
         void OnImportClicked()
         {
-            if (!AssetDatabase.IsValidFolder(folderPath + "/Resources"))
+            if (!AssetDatabase.IsValidFolder(_folderPath + "/Resources"))
             {
-                AssetDatabase.CreateFolder(folderPath, "Resources");
+                AssetDatabase.CreateFolder(_folderPath, "Resources");
             }
 
-            if (!AssetDatabase.IsValidFolder(folderPath + "/Scripts"))
+            if (!AssetDatabase.IsValidFolder(_folderPath + "/Scripts"))
             {
-                AssetDatabase.CreateFolder(folderPath, "Scripts");
+                AssetDatabase.CreateFolder(_folderPath, "Scripts");
             }
 
             EditorUtility.ClearProgressBar();
             process = 0;
             currentIndex = 0;
-            ExportSheet(localizedConfig.spreadSheetKey, localizedConfig.SheetNames[currentIndex]);
+            ExportSheet(_sheetConfig.spreadSheetKey, _sheetConfig.SheetNames[currentIndex]);
         }
 
         void ExportSheet(string sheetId, string sheetName)
@@ -223,9 +229,9 @@ namespace GoogleSheetsToUnity.Editor
         void OnCompleteRead()
         {
             currentIndex++;
-            if (currentIndex < localizedConfig.SheetNames.Count)
+            if (currentIndex < _sheetConfig.SheetNames.Count)
             {
-                ExportSheet(localizedConfig.spreadSheetKey, localizedConfig.SheetNames[currentIndex]);
+                ExportSheet(_sheetConfig.spreadSheetKey, _sheetConfig.SheetNames[currentIndex]);
             }
             else
             {
@@ -238,7 +244,7 @@ namespace GoogleSheetsToUnity.Editor
             if (sheet != null)
             {
                 Debug.Log($"Total Row Count: {sheet.rows.primaryDictionary.Count}");
-                ExportData(sheet, (currentIndex + 1) * (100 / (float) localizedConfig.SheetNames.Count), OnCompleteRead);
+                ExportData(sheet, (currentIndex + 1) * (100 / (float) _sheetConfig.SheetNames.Count), OnCompleteRead);
             }
         }
 
@@ -246,15 +252,15 @@ namespace GoogleSheetsToUnity.Editor
         {
             var sheetName = sheet.sheetName;
             int count = 0;
-            
+
             //Export Json file
             var stringValues = new List<string>();
-            int countkey = 0; 
+            int countkey = 0;
             foreach (var key in sheet.columns.secondaryKeyLink.Keys)
             {
                 if (!key.Equals("key") && !key.Contains("[") && !key.Contains("]"))
                 {
-                    var jsonPath = $"{Application.dataPath}/Localizations/Resources/[{key}]{sheetName}.json";
+                    var jsonPath = $"{Application.dataPath}/{exportFolder}/Resources/[{key}]{sheetName}.json";
                     var jsonString = "{\n" + "\t\"" + key + "\": [\n";
 
                     var ListValue = sheet.columns.GetValueFromSecondary(key);
@@ -274,13 +280,13 @@ namespace GoogleSheetsToUnity.Editor
                     jsonString += textValue;
                     jsonString += "\t]" + "\n}";
                     File.WriteAllText(jsonPath, jsonString);
-                    
+
                     countkey++;
                 }
             }
 
             //Export class
-            var classPath = $"{Application.dataPath}/Localizations/Scripts/{sheetName}Container.cs";
+            var classPath = $"{Application.dataPath}/{exportFolder}/Scripts/{sheetName}Container.cs";
             var classContent = ClassContent(sheetName);
             var ListKey = "";
             var ListLanguage = "";
@@ -321,15 +327,15 @@ namespace GoogleSheetsToUnity.Editor
         string ClassContent(string sheetName)
         {
             var content = " /* * * * * *\n";
-            content += " * Author: Quoc Nguyen\n";
+            content += " * Author: QuocNT\n";
             content += " * Email: ntq.quoc@gmail.com\n";
             content += " * * * * * */\n\n";
 
             content += "using System;\n";
-            content += "using Quocnt.SimpleJSON;\n";
+            content += "using Q.SimpleJSON;\n";
             content += "using UnityEngine;\n\n";
 
-            content += "namespace Localization.Extension\n";
+            content += "namespace Q.GSTU.Extension\n";
             content += "{\n";
 
             //enum
@@ -407,4 +413,3 @@ namespace GoogleSheetsToUnity.Editor
         }
     }
 }
-
